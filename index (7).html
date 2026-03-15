@@ -1,0 +1,210 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>PEA MERGE ELITE | Pro Version</title>
+    <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@900&family=Poppins:wght@700&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --primary-blue: #00f2fe;
+            --primary-pink: #f472b6;
+            --bg-dark: #09090b;
+        }
+        * { box-sizing: border-box; touch-action: manipulation; user-select: none; }
+        body { 
+            margin: 0; padding: 0; background: var(--bg-dark); 
+            font-family: 'Poppins', sans-serif; overflow: hidden; 
+            display: flex; flex-direction: column; align-items: center; height: 100vh; 
+        }
+
+        /* --- Header Title --- */
+        #brand-container { margin-top: 20px; z-index: 10; }
+        .main-title {
+            font-family: 'Montserrat', sans-serif;
+            font-size: 28px; letter-spacing: 5px; text-transform: uppercase;
+            background: linear-gradient(135deg, #fff 0%, var(--primary-blue) 50%, var(--primary-pink) 100%);
+            -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+            filter: drop-shadow(0 0 10px rgba(0, 242, 254, 0.5));
+        }
+
+        /* --- Stats Bar --- */
+        #header {
+            display: flex; justify-content: space-between; width: 100%;
+            max-width: 400px; padding: 15px 25px; z-index: 10;
+        }
+        .stat-card {
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            backdrop-filter: blur(10px);
+            padding: 8px 20px; border-radius: 12px; text-align: center;
+        }
+        .label { font-size: 10px; color: #94a3b8; letter-spacing: 2px; }
+        .val { font-size: 22px; font-weight: 700; color: white; }
+
+        /* --- Game Arena --- */
+        #arena-wrapper {
+            position: relative; width: 92vw; max-width: 400px; height: 75vh;
+            background: radial-gradient(circle at 50% 10%, #1e1b4b 0%, #000 100%);
+            border: 2px solid rgba(255, 255, 255, 0.1);
+            border-radius: 30px; overflow: hidden;
+            box-shadow: 0 0 50px rgba(0,0,0,0.8);
+        }
+        canvas { width: 100% !important; height: 100% !important; }
+
+        /* --- Start & Over Screens --- */
+        .overlay {
+            position: absolute; inset: 0;
+            background: rgba(0,0,0,0.95); flex-direction: column;
+            justify-content: center; align-items: center; z-index: 100;
+            display: flex; backdrop-filter: blur(10px);
+        }
+        #game-over { display: none; }
+
+        .play-btn {
+            background: linear-gradient(135deg, var(--primary-blue), var(--primary-pink));
+            color: white; border: none; padding: 18px 60px; border-radius: 40px;
+            font-size: 20px; font-weight: 900; cursor: pointer;
+            box-shadow: 0 10px 30px rgba(0, 242, 254, 0.4);
+            transition: 0.3s; text-transform: uppercase; letter-spacing: 2px;
+        }
+        .play-btn:active { transform: scale(0.9); }
+    </style>
+</head>
+<body>
+
+    <div id="brand-container">
+        <div class="main-title">ELITE MERGE</div>
+    </div>
+
+    <div id="header">
+        <div class="stat-card">
+            <div class="label">SCORE</div>
+            <div id="score" class="val">0</div>
+        </div>
+        <div class="stat-card">
+            <div class="label">BEST</div>
+            <div id="high-score" class="val">0</div>
+        </div>
+    </div>
+
+    <div id="arena-wrapper">
+        <div id="start-screen" class="overlay">
+            <h1 style="color: white; margin-bottom: 30px; font-family: 'Montserrat'; letter-spacing: 2px;">READY?</h1>
+            <button class="play-btn" onclick="startGame()">START GAME</button>
+        </div>
+
+        <div id="game-over" class="overlay">
+            <h2 style="color: white; font-size: 32px; margin: 0;">GAME OVER</h2>
+            <p style="color: #94a3b8; margin: 15px 0;">Score: <span id="final-score" style="color: white; font-weight: bold;">0</span></p>
+            <button class="play-btn" onclick="location.reload()">RETRY</button>
+        </div>
+    </div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/matter-js/0.19.0/matter.min.js"></script>
+    <script>
+        const { Engine, Render, Runner, Bodies, Composite, Events } = Matter;
+
+        let gameStarted = false;
+        const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        function playSfx(f) {
+            if (audioCtx.state === 'suspended') audioCtx.resume();
+            const o = audioCtx.createOscillator(); const g = audioCtx.createGain();
+            o.frequency.setValueAtTime(f, audioCtx.currentTime);
+            g.gain.exponentialRampToValueAtTime(0.0001, audioCtx.currentTime + 0.1);
+            o.connect(g); g.connect(audioCtx.destination);
+            o.start(); o.stop(audioCtx.currentTime + 0.1);
+        }
+
+        const wrapper = document.getElementById('arena-wrapper');
+        const w = wrapper.clientWidth; const h = wrapper.clientHeight;
+
+        const engine = Engine.create();
+        const render = Render.create({
+            element: wrapper, engine: engine,
+            options: { width: w, height: h, wireframes: false, background: 'transparent' }
+        });
+
+        const ground = Bodies.rectangle(w/2, h + 25, w, 50, { isStatic: true });
+        Composite.add(engine.world, [
+            ground,
+            Bodies.rectangle(-15, h/2, 30, h, { isStatic: true }),
+            Bodies.rectangle(w + 15, h/2, 30, h, { isStatic: true })
+        ]);
+
+        let score = 0;
+        let best = localStorage.getItem('FixedEliteBest') || 0;
+        document.getElementById('high-score').innerText = best;
+
+        const skins = [
+            { r: w*0.06, c: '#fff', s: '#00f2fe' },
+            { r: w*0.09, c: '#00f2fe', s: '#fff' },
+            { r: w*0.13, c: '#4facfe', s: '#fff' },
+            { r: w*0.18, c: '#a78bfa', s: '#fff' },
+            { r: w*0.25, c: '#f472b6', s: '#fff' }
+        ];
+
+        function spawnPea(x, y, lvl) {
+            return Bodies.circle(x, y, skins[lvl].r, {
+                restitution: 0.4, label: lvl.toString(),
+                render: { fillStyle: skins[lvl].c, strokeStyle: skins[lvl].s, lineWidth: 4 }
+            });
+        }
+
+        function startGame() {
+            document.getElementById('start-screen').style.display = 'none';
+            gameStarted = true;
+            if (audioCtx.state === 'suspended') audioCtx.resume();
+        }
+
+        const drop = (e) => {
+            if (!gameStarted) return;
+            const rect = wrapper.getBoundingClientRect();
+            const xVal = e.clientX || (e.touches && e.touches[0].clientX);
+            if (!xVal) return;
+            const x = Math.max(30, Math.min(w - 30, xVal - rect.left));
+            Composite.add(engine.world, spawnPea(x, 40, Math.floor(Math.random() * 2)));
+            playSfx(440);
+        };
+
+        wrapper.addEventListener('mousedown', drop);
+        wrapper.addEventListener('touchstart', (e) => { 
+            if(gameStarted) e.preventDefault(); 
+            drop(e); 
+        });
+
+        Events.on(engine, 'collisionStart', (event) => {
+            event.pairs.forEach(p => {
+                const { bodyA, bodyB } = p;
+                if (bodyA.label === bodyB.label && bodyA.label !== 'static') {
+                    const lvl = parseInt(bodyA.label);
+                    if (lvl < skins.length - 1) {
+                        const midX = (bodyA.position.x + bodyB.position.x) / 2;
+                        const midY = (bodyA.position.y + bodyB.position.y) / 2;
+                        Composite.remove(engine.world, [bodyA, bodyB]);
+                        Composite.add(engine.world, spawnPea(midX, midY, lvl + 1));
+                        score += (lvl + 1) * 20;
+                        document.getElementById('score').innerText = score;
+                        playSfx(200 + lvl * 50);
+                    }
+                }
+            });
+        });
+
+        setInterval(() => {
+            if(!gameStarted) return;
+            Composite.allBodies(engine.world).forEach(b => {
+                if (!b.isStatic && b.position.y < 80 && b.velocity.y < 0.2) {
+                    document.getElementById('game-over').style.display = 'flex';
+                    document.getElementById('final-score').innerText = score;
+                    gameStarted = false;
+                    if(score > best) localStorage.setItem('FixedEliteBest', score);
+                }
+            });
+        }, 1200);
+
+        Render.run(render);
+        Runner.run(Runner.create(), engine);
+    </script>
+</body>
+</html>
